@@ -844,10 +844,14 @@ Set to nil if you put anzu in your mode-line manually."
                 clear-overlay t)
           (let ((case-fold-search (and case-fold-search (not at-cursor))))
             (if use-regexp
-                (apply #'perform-replace (anzu--construct-perform-replace-arguments
-                                          from to delimited beg end backward query))
-              (apply #'query-replace (anzu--construct-query-replace-arguments
-                                      from to delimited beg end backward)))))
+                (let ((replace-regexp-lax-whitespace
+                       (if isearch-p isearch-regexp-lax-whitespace replace-regexp-lax-whitespace)))
+                  (apply #'perform-replace (anzu--construct-perform-replace-arguments
+                                            from to delimited beg end backward query)))
+              (let ((replace-lax-whitespace
+                     (if isearch-p isearch-lax-whitespace replace-lax-whitespace)))
+                (apply #'query-replace (anzu--construct-query-replace-arguments
+                                        from to delimited beg end backward))))))
       (progn
         (unless clear-overlay
           (anzu--clear-overlays curbuf (min beg end) (max beg end)))
