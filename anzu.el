@@ -185,8 +185,9 @@ Set to nil if you put anzu in your mode-line manually."
   (cond ((eq (anzu--isearch-regexp-function) 'isearch-symbol-regexp)
          (setq str (isearch-symbol-regexp str)))
         ((anzu--word-search-p)
-         (setq str (regexp-quote str)))
-        (t str)))
+         (setq str (anzu--convert-for-lax-whitespace str nil t)))
+        (t
+         (setq str (anzu--convert-for-lax-whitespace str t t)))))
 
 (defsubst anzu--use-migemo-p ()
   (when anzu-use-migemo
@@ -391,13 +392,17 @@ Set to nil if you put anzu in your mode-line manually."
                thereis (and (>= beg b overlay-beg) (<= end e overlay-end)))
     (and (>= beg overlay-beg) (<= end overlay-end))))
 
-(defun anzu--convert-for-lax-whitespace (str use-regexp)
+(defun anzu--convert-for-lax-whitespace (str use-regexp isearch-p)
   (if use-regexp
-      (if replace-regexp-lax-whitespace
+      (if (if isearch-p
+              isearch-regexp-lax-whitespace
+            replace-regexp-lax-whitespace)
           (replace-regexp-in-string "\\s-+" search-whitespace-regexp str
                                     nil t)
         str)
-    (if replace-lax-whitespace
+    (if (if isearch-p
+            isearch-lax-whitespace
+          replace-lax-whitespace)
         (replace-regexp-in-string "\\s-+"
                                   search-whitespace-regexp
                                   (regexp-quote str)
@@ -406,9 +411,10 @@ Set to nil if you put anzu in your mode-line manually."
 
 ;; Return highlighted count
 (defun anzu--count-and-highlight-matched (buf str replace-beg replace-end
-                                              use-regexp overlay-limit case-sensitive)
+                                              use-regexp overlay-limit case-sensitive
+                                              isearch-p)
   (anzu--cleanup-markers)
-  (setq str (anzu--convert-for-lax-whitespace str use-regexp))
+  (setq str (anzu--convert-for-lax-whitespace str use-regexp isearch-p))
   (if (not (anzu--validate-regexp str))
       anzu--cached-count
     (with-current-buffer buf
@@ -457,7 +463,7 @@ Set to nil if you put anzu in your mode-line manually."
           (setq anzu--outside-point (match-beginning 0))
           (let ((overlay-limit (anzu--overlay-limit backward)))
             (anzu--count-and-highlight-matched buf input beg end use-regexp
-                                               overlay-limit nil)))))))
+                                               overlay-limit nil nil)))))))
 
 (defconst anzu--from-to-separator
   (propertize
@@ -480,7 +486,7 @@ Set to nil if you put anzu in your mode-line manually."
          (overlayed (if empty-p
                         (setq anzu--cached-count 0)
                       (anzu--count-and-highlight-matched buf from beg end use-regexp
-                                                         overlay-limit nil))))
+                                                         overlay-limit nil nil))))
     (when anzu--outside-point
       (setq anzu--outside-point nil)
       (with-selected-window (get-buffer-window buf)
@@ -489,7 +495,7 @@ Set to nil if you put anzu in your mode-line manually."
       (anzu--search-outside-visible buf from beg end use-regexp))
     (when to
       (setq anzu--last-replace-input "")
-      (anzu--append-replaced-string to buf beg end use-regexp overlay-limit from))
+      (anzu--append-replaced-string to buf beg end use-regexp overlay-limit from nil))
     (setq anzu--total-matched anzu--cached-count)
     (force-mode-line-update)))
 
@@ -614,13 +620,13 @@ Set to nil if you put anzu in your mode-line manually."
     (when (string-match from str)
       (replace-match replaced (not case-fold-search) t str))))
 
-(defun anzu--append-replaced-string (content buf beg end use-regexp overlay-limit from)
+(defun anzu--append-replaced-string (content buf beg end use-regexp overlay-limit from isearch-p)
   (let ((replacements 0))
     (unless (string= content anzu--last-replace-input)
       (setq anzu--last-replace-input content)
       (with-current-buffer buf
         (let ((case-fold-search (anzu--case-fold-search))
-              (pattern (anzu--convert-for-lax-whitespace from use-regexp)))
+              (pattern (anzu--convert-for-lax-whitespace from use-regexp isearch-p)))
           (dolist (ov (anzu--overlays-in-range beg (min end overlay-limit)))
             (let ((replace-evaled
                    (if (not use-regexp)
@@ -635,7 +641,7 @@ Set to nil if you put anzu in your mode-line manually."
     (goto-char (+ anzu--outside-point (- orig-limit orig-beg)))
     (line-end-position)))
 
-(defun anzu--read-to-string (from prompt beg end use-regexp overlay-limit)
+(defun anzu--read-to-string (from prompt beg end use-regexp overlay-limit isearch-p)
   (let ((curbuf (current-buffer))
         (orig-beg beg)
         (to-prompt (format "%s %s with: " prompt (query-replace-descr from)))
@@ -659,7 +665,8 @@ Set to nil if you put anzu in your mode-line manually."
                                                    (minibuffer-window))
                            (anzu--append-replaced-string
                             (minibuffer-contents)
-                            curbuf beg end use-regexp overlay-limit from))))))
+                            curbuf beg end use-regexp overlay-limit from
+                            isearch-p))))))
           (prog1 (read-from-minibuffer to-prompt
                                        nil nil nil
                                        query-replace-from-history-variable nil t)
@@ -670,9 +677,9 @@ Set to nil if you put anzu in your mode-line manually."
         (unless is-input
           (goto-char orig-beg))))))
 
-(defun anzu--query-replace-read-to (from prompt beg end use-regexp overlay-limit)
+(defun anzu--query-replace-read-to (from prompt beg end use-regexp overlay-limit isearch-p)
   (query-replace-compile-replacement
-   (let ((to (anzu--read-to-string from prompt beg end use-regexp overlay-limit)))
+   (let ((to (anzu--read-to-string from prompt beg end use-regexp overlay-limit isearch-p)))
      (add-to-history query-replace-to-history-variable to nil t)
      (add-to-history 'anzu--query-defaults (cons from to) nil t)
      to)
@@ -689,13 +696,13 @@ Set to nil if you put anzu in your mode-line manually."
     (unless symbol
       (error "No symbol at cursor!!"))
     (let ((symbol-regexp (concat "\\_<" (regexp-quote symbol) "\\_>")))
-      (anzu--count-and-highlight-matched buf symbol-regexp beg end t overlay-limit t)
+      (anzu--count-and-highlight-matched buf symbol-regexp beg end t overlay-limit t nil)
       (setq anzu--total-matched anzu--cached-count)
       (force-mode-line-update)
       symbol-regexp)))
 
 (defun anzu--query-from-isearch-string (buf beg end use-regexp overlay-limit)
-  (anzu--count-and-highlight-matched buf isearch-string beg end use-regexp overlay-limit t)
+  (anzu--count-and-highlight-matched buf isearch-string beg end use-regexp overlay-limit t t)
   (setq anzu--total-matched anzu--cached-count)
   (force-mode-line-update)
   (add-to-history query-replace-from-history-variable isearch-string nil t)
@@ -829,7 +836,7 @@ Set to nil if you put anzu in your mode-line manually."
                               replaced)))
                          (t
                           (anzu--query-replace-read-to
-                           from prompt beg end use-regexp overlay-limit)))))
+                           from prompt beg end use-regexp overlay-limit isearch-p)))))
           (anzu--clear-overlays curbuf (min beg end) (max beg end))
           (anzu--set-replaced-markers from beg end use-regexp)
           (setq anzu--state 'replace anzu--current-position 0
