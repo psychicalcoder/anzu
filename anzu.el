@@ -183,11 +183,11 @@ Set to nil if you put anzu in your mode-line manually."
 
 (defun anzu--transform-input (str)
   (cond ((eq (anzu--isearch-regexp-function) 'isearch-symbol-regexp)
-         (setq str (isearch-symbol-regexp str)))
+         (isearch-symbol-regexp str))
         ((anzu--word-search-p)
-         (setq str (anzu--convert-for-lax-whitespace str nil t)))
+         (anzu--convert-for-lax-whitespace str nil t))
         (t
-         (setq str (anzu--convert-for-lax-whitespace str t t)))))
+         (anzu--convert-for-lax-whitespace str t t))))
 
 (defsubst anzu--use-migemo-p ()
   (when anzu-use-migemo
@@ -393,21 +393,16 @@ Set to nil if you put anzu in your mode-line manually."
     (and (>= beg overlay-beg) (<= end overlay-end))))
 
 (defun anzu--convert-for-lax-whitespace (str use-regexp isearch-p)
-  (if use-regexp
-      (if (if isearch-p
-              isearch-regexp-lax-whitespace
-            replace-regexp-lax-whitespace)
-          (replace-regexp-in-string "\\s-+" search-whitespace-regexp str
-                                    nil t)
-        str)
-    (if (if isearch-p
-            isearch-lax-whitespace
-          replace-lax-whitespace)
-        (replace-regexp-in-string "\\s-+"
-                                  search-whitespace-regexp
-                                  (regexp-quote str)
+  (let ((query (if use-regexp str (regexp-quote str)))
+        (lax-whitespace (cond
+                         ((and use-regexp isearch-p) isearch-regexp-lax-whitespace)
+                         (use-regexp replace-regexp-lax-whitespace)
+                         (isearch-p isearch-lax-whitespace)
+                         (t replace-lax-whitespace))))
+    (if lax-whitespace
+        (replace-regexp-in-string "\\s-+" search-whitespace-regexp query
                                   nil t)
-      (regexp-quote str))))
+      query)))
 
 ;; Return highlighted count
 (defun anzu--count-and-highlight-matched (buf str replace-beg replace-end
