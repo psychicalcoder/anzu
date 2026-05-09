@@ -771,10 +771,13 @@ Set to nil if you put anzu in your mode-line manually."
            when (= pos curpoint)
            return i))
 
-(defadvice replace-highlight (before anzu-replace-highlight activate)
-  (when (and (eq anzu--state 'replace) anzu--replaced-markers)
-    (let ((index (anzu--current-replaced-index (ad-get-arg 0))))
-      (when (or (not index) (/= index anzu--current-position))
+(define-advice replace-highlight
+    (:before (regexp &rest _args) anzu-replace-highlight)
+  (when (and (eq anzu--state 'replace)
+             anzu--replaced-markers)
+    (let ((index (anzu--current-replaced-index regexp)))
+      (when (or (not index)
+                (/= index anzu--current-position))
         (force-mode-line-update)
         (setq anzu--current-position (or index 1))))))
 
